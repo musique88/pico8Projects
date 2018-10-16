@@ -8,19 +8,27 @@ function _init()
 	bullets = {}
 	bkgstars = {}
 	enemies = {}
+	planets = {}
+	frcol = 8
+	score = 0
+	firerate = 50
 	player = mkactor(64,1,1)
 	add(actors, player)
 	enemytimer=0
+	planettimer=0
 end
 
 function _update()
+ for p in all(planets)do
+ 	p:update()
+ end
 	for a in all(actors)do
 		a:update()
 	end
 	for b in all(bullets)do
 		b:update()
 	end
-	if (enemytimer >= 60)then
+	if (enemytimer >= 30)then
 		local enemy = mkenemy()
 		add(enemies,enemy)
 		enemytimer = 0
@@ -31,11 +39,28 @@ function _update()
 	enemytimer += 1
 	mkstars()
 	updatestars()
+	firerate += 1
+	planettimer+=1
+	if firerate > 7 then
+		frcol = 11
+	else
+		frcol = 8
+	end
+ if planettimer >= 100+rnd(1000) then
+ 	add(planets, mkplanet())
+ 	planettimer=0
+ end
+ if (#actors==0) then
+ 	if (btn(5)) _init()
+ end
 end
 
 function _draw()
 	cls()
 	drawstars()
+	for p in all(planets)do
+		p:draw()
+	end
 	for b in all(bullets)do
 	 b:draw()
 	end
@@ -45,9 +70,12 @@ function _draw()
 	for e in all(enemies)do
 		e:draw()
 	end
-	print(enemytimer, 0,0)
-	print(#enemies, 0, 8)
-	print(coli, 0, 16)
+	print("your score is:",0,0,7)
+	print(score, 64,0,7)
+	if (#actors == 0) then
+		print("you died", 50,64)
+		print("press ❎ to restart", 25, 72)
+	end
 end
 -->8
 --make functions
@@ -55,11 +83,17 @@ end
 function mkactor(x,vx,s)
 	local a ={
 		x=x,
+		y=100,
 		vx=vx,
 		s=s,
 		ax=0.25,
 		mvx=4,
+		w=8,
+		h=8,
+		animtimer=0,
+		frame=0,
 		update = function(self)
+		endgame()
 			if (btn(0) and not (self.x < 1 )) then 
 				if (self.vx>0) then
 				 self.vx = -0.1 
@@ -78,13 +112,25 @@ function mkactor(x,vx,s)
 			self.x += self.vx
 			if (self.x<0) self.x = 0
 			if (self.x>120) self.x = 120
-			if (btnp(4)) then
+			if (btn(4) and firerate >= 7) then
 			 local b=mkbullet(self.x)
 			 add(bullets, b)
+			 firerate = 0
 			end
+			if self.animtimer >= 4 then
+				if self.frame == 3 then
+					self.frame = 0
+				else
+					self.frame+=1
+				end
+				self.animtimer = 0
+			end
+			self.animtimer+=1
 		end,
 		draw = function(self)
-			spr(self.s,self.x,100)
+			spr(self.s,self.x,self.y)
+			spr(17+self.frame,self.x,self.y+8)
+			rectfill(self.x+3, self.y+2, self.x+4, self.y+2, frcol)
 		end
 	}
 	return a
@@ -96,6 +142,8 @@ function mkbullet(x)
 		y=100,
 		v=0.2,
 		l=1,
+		w=8,
+		h=8,
 		update = function(self)
 			self.y -= self.v
 			if(self.v<2) then
@@ -107,6 +155,13 @@ function mkbullet(x)
 			end
 			self.l = self.v/2
 			if (self.y<0) del(bullets,self)
+			for e in all(enemies) do
+				if collision(self,e) then
+					del(bullets,self)
+					del(enemies,e)
+					score +=1
+				end
+			end
 		end,
 		draw = function(self)
 			rectfill(self.x+3,self.y+3,self.x+4,self.y+4+(self.l),9)
@@ -117,27 +172,34 @@ end
 
 function mkenemy()
 	e = {
-		x=rnd(128),
+		x=rnd(120),
 		y=0,
+		speed=1+rnd(4),
 		d=rnd(2)-1,
 		w= 8,
 		h= 8,
+		animspeed=0.1+rnd(0.9),
+		animtimer=0,
+		frame=0,
 		update = function(self)
-			self.y += 2
+			self.y += self.speed
 			self.x += self.d
-			--a l'aide antoine
-			for b in all(bullet) do
-				for e in all(enemies) do
-					if collisionbullet(b,e) then
-						del(enemies, e)
-						coli = true
-					end
+			if (self.animtimer >= 5) then
+				if self.frame == 3 then
+					self.frame = 0
+				else
+				 self.frame+=1
 				end
+				self.animtimer = 0
 			end
+			if (self.y>=128) self.y = 0
+			if (self.x>=120) self.d = -self.d
+			if (self.x<=0) self.d = -self.d
+			self.animtimer+=self.animspeed
 		end,
 		
 		draw = function(self)
-			spr(3,self.x,self.y)
+			spr(3+self.frame,self.x,self.y)
 		end
 	}
 	return e
@@ -175,32 +237,75 @@ function drawstars()
 		rectfill(s[1],s[2],s[1],s[2]+s[3],s[5])
 	end
 end
+
+function mkplanet()
+ p = {
+ 	x = rnd(128+30)-30,
+ 	y = -100,
+ 	t = ceil(rnd(3)),
+ 	s = 7,
+ 	sc = 2,
+ 	update=function(self)
+ 		self.y += 0.5
+ 		if (self.t==1) then
+ 			self.s = 7
+ 			self.sc = 2
+ 		elseif(self.t==2) then
+ 			self.s = 9
+ 			self.sc = 2
+ 		else
+ 			self.s = 11
+ 			self.sc = 4
+ 		end
+ 	end,
+ 	draw=function(self)
+ 		spr(self.s,self.x,self.y, self.sc,self.sc)
+ 	end
+ }
+ return p
+end
 -->8
 --utilz
 
-function collisionbullet(bullet,object)
-	if (bullet.y <= object.y and
-					bullet.y >= (object.y+object.h)and
-					bullet.x >= object.x and
-					bullet.x <= (object.x+object.w)) then
-	return true
+function collision(o1,o2)
+	if (o1.y >= o2.y-(o2.h/2) and
+					o1.y <= (o2.y+(o2.h/2)) and
+					o1.x >= o2.x-(o2.w/2) and
+					o1.x <= (o2.x+(o2.w/2))) then
+		return true
 	else
-	return false
+		return false
 	end
 end
+
+function distance(o1,o2)
+	a = abs((o1.x+o1.w/2) - (o2.x+o2.w/2))
+	b = abs((o1.y+o1.h/2) - (o2.y+o2.h/2))
+	return sqrt(a^2+b^2)
+end
+-->8
+--misc
+
+function endgame()
+	for e in all(enemies)do
+	 if (distance(e,player) <= 6) then
+			del(actors,player)
+		end
+ end
+end
 __gfx__
-00000000000000000000000000550000000070000000000000000000000000111c000000000000222e0000000000000000009999999900000000000000000000
-000000000000000000000000055555000000700000700000007700000000111111cc00000000222222ee00000000000000999999999999000000000000000000
-0070070000088000000000005555550000007000007000000077000000011111111cc00000022222222ee0000000000099999999999999990000000000000000
-0007700000555500000000000555555000000000007000000000000000113111111ccc0000229222222eee000000009999999999999999999900000000000000
-00077000055cc5500000000005555555000000000070000000000000011333331111ccc0022999992222eee00000099999999999999999999990000000000000
-0070070055cccc550000000005555555000000000000000000000000011333331111ccc0022999992222eee00000999999999999999999999999000000000000
-000000005555555500000000005555500000000000000000000000001113333311113bcc2229999922229aee0009999999999999999999999999900000000000
-000000005099990500000000000550000000000000000000000000001111133311113bcc2222299922229aee0009999999999999999999999999900000000000
-000000000000000000000000000000000000000000000000000000001111113311133bcc2222229922299aee0099999999999999999999999999990000000000
-00000000000000000000000000000000000000000000000000000000111111311113bbcc222222922229aaee0099999999999999999999999999990000000000
-00000000000000000000000000000000000000000000000000000000011111111113bcc0022222222229aee00999999999999999999999999999999000000000
-00000000000000000000000000000000000000000000000000000000011111111111ccc0022222222222eee00999999999999999999999999999999000000000
+00000000000000000000000000888000000000000888800000880000000000111c000000000000222e0000000000000000009999999900000000000000000000
+000000000000000000000000085588000008888085558800008580000000111111cc00000000222222ee00000000000000999999999999000000000000000000
+0070070000088000000000008555580008855588855558000855588000011111111cc00000022222222ee0000000000099999999999999990000000000000000
+0007700000555500000000000855558085555558855555800855558000113111111ccc0000229222222eee000000009999999999999999999900000000000000
+00077000055cc5500000000008555558855555588555558085555580011333331111ccc0022999992222eee00000099999999999999999999990000000000000
+0070070055cccc550000000008555558085555588555558085555580011333331111ccc0022999992222eee00000999999999999999999999999000000000000
+000000005555555500000000008558800085555808855580855588001113333311113bcc2229999922229aee0009999999999999999999999999900000000000
+00000000509aa90500000000000880000008888000088800088800001111133311113bcc2222299922229aee0009999999999999999999999999900000000000
+00000000009aa900009aa900009aa900009aa90000000000000000001111113311133bcc2222229922299aee0099999999999999999999999999990000000000
+00000000009aa900009aa90000099000009aa9000000000000000000111111311113bbcc222222922229aaee0099999999999999999999999999990000000000
+00000000009aa9000009900000000000000990000000000000000000011111111113bcc0022222222229aee00999999999999999999999999999999000000000
+00000000000990000000000000000000000000000000000000000000011111111111ccc0022222222222eee00999999999999999999999999999999000000000
 0000000000000000000000000000000000000000000000000000000000111331111ccc0000222992222eee009999999999999999999999999999999900000000
 0000000000000000000000000000000000000000000000000000000000011333111cc00000022999222ee0009999999999999999999999999999999900000000
 000000000000000000000000000000000000000000000000000000000000111111cc00000000222222ee00009999999999999999999999999999999900000000
